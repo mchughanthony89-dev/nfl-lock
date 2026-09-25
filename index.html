@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NFL - Lock of the Week</title>
+  
+  <!-- Supabase Client Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --green: #22c55e;
+      --green-bg: rgba(34, 197, 94, 0.15);
+      --red: #ef4444;
+      --gold: #eab308;
+      --accent: #3b82f6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 16px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 20px; }
+    header { text-align: center; padding: 16px 0; border-bottom: 2px solid var(--border); }
+    header h1 { font-size: 1.75rem; letter-spacing: 1px; }
+
+    .panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .panel label { font-weight: bold; margin-bottom: 4px; display: block; }
+    textarea, input, select { width: 100%; background: #0f172a; border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px; font-size: 0.95rem; }
+    textarea { height: 100px; resize: vertical; font-family: monospace; }
+    
+    button { background: var(--accent); color: #fff; border: none; padding: 12px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 1rem; }
+    button:hover { background: #2563eb; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .section-title { font-size: 1.15rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 12px; }
+    
+    .gallery-container { display: flex; gap: 12px; overflow-x: auto; padding: 8px 0; scroll-snap-type: x mandatory; }
+    .gallery-img { max-height: 380px; border-radius: 8px; border: 1px solid var(--border); scroll-snap-align: start; object-fit: contain; cursor: pointer; }
+
+    .odds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 8px; }
+    .odds-card { background: #0f172a; border: 2px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; transition: all 0.2s; position: relative; }
+    .odds-card:hover { border-color: var(--accent); }
+    .odds-card.selected { border-color: var(--green); background: var(--green-bg); box-shadow: 0 0 10px rgba(34, 197, 94, 0.3); }
+    .odds-team { font-weight: bold; font-size: 0.95rem; display: block; margin-bottom: 4px; }
+    .odds-val { color: var(--accent); font-weight: 600; font-size: 0.9rem; }
+    .odds-datetime { display:block; color:var(--text-muted); font-size:.76rem; margin-bottom:6px; }
+    .fixture-row { grid-column:1/-1; color:var(--text-muted); font-size:.78rem; font-weight:700; letter-spacing:.3px; margin-top:5px; }
+    .selected-tag { display: none; background: var(--green); color: #000; font-size: 0.7rem; font-weight: bold; padding: 2px 6px; border-radius: 4px; margin-top: 6px; }
+    .odds-card.selected .selected-tag { display: inline-block; }
+    .odds-card.kickoff-locked { opacity:.48; cursor:not-allowed; border-style:dashed; }
+    .odds-card.kickoff-locked:hover { border-color:var(--border); }
+    .kickoff-lock-tag { display:inline-block; margin-top:6px; padding:2px 6px; border-radius:4px; background:rgba(239,68,68,.18); color:#fca5a5; font-size:.7rem; font-weight:800; }
+    .game-status { display:block; margin-top:7px; font-size:.76rem; font-weight:800; }
+    .game-status.live { color:#fbbf24; }
+    .game-status.final { color:var(--text); }
+    .game-status.final.win { color:var(--green); }
+    .game-status.final.loss { color:var(--red); }
+    .team-record { color:var(--text-muted); font-weight:600; font-size:.82rem; }
+
+
+    .current-pick-notice { background: rgba(59, 130, 246, 0.15); border: 1px solid var(--accent); border-radius: 8px; padding: 10px; text-align: center; font-size: 0.95rem; display: none; }
+    .current-pick-notice.active { display: block; }
+
+    .selection-banner { background: #0f172a; border: 1px dashed var(--border); border-radius: 8px; padding: 12px; text-align: center; font-size: 0.95rem; color: var(--text-muted); transition: all 0.3s ease; }
+    .selection-banner.active { border: 2px solid var(--green); background: rgba(34, 197, 94, 0.1); color: var(--text); }
+    .selection-banner strong { color: var(--green); font-size: 1.05rem; }
+
+    .leaderboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .leaderboard-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; justify-content: space-between; align-items: center; }
+    .rank { font-weight: bold; margin-right: 8px; }
+    .score { font-weight: bold; font-size: 1.1rem; }
+    .score.positive { color: var(--green); }
+    .score.negative { color: var(--red); }
+
+    .players-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .player-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+    .player-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 12px; }
+    .pick-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .pick-item { display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.03); padding: 8px 12px; border-radius: 6px; font-size: 0.95rem; }
+    
+    .status-badge { font-size: 0.8rem; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
+    .badge-win { background: rgba(34, 197, 94, 0.2); color: var(--green); }
+    .badge-loss { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+    .badge-pending { background: rgba(234, 179, 8, 0.2); color: var(--gold); }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <h1 id="header-title">📋 LOCK OF THE WEEK</h1>
+      <div style="margin-top:12px;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button type="button" onclick="changeViewWeek(-1)" style="width:auto;padding:8px 14px;">‹</button>
+        <label style="margin:0;display:flex;align-items:center;gap:8px;">View Week
+          <select id="view-week-input" onchange="loadViewWeekData()" style="width:auto;min-width:110px;margin:0;">
+            <option value="1">Week 1</option>
+            <option value="2">Week 2</option>
+            <option value="3">Week 3</option>
+            <option value="4">Week 4</option>
+            <option value="5">Week 5</option>
+            <option value="6">Week 6</option>
+            <option value="7">Week 7</option>
+            <option value="8">Week 8</option>
+            <option value="9">Week 9</option>
+            <option value="10">Week 10</option>
+            <option value="11">Week 11</option>
+            <option value="12">Week 12</option>
+            <option value="13">Week 13</option>
+            <option value="14">Week 14</option>
+            <option value="15">Week 15</option>
+            <option value="16">Week 16</option>
+            <option value="17">Week 17</option>
+            <option value="18">Week 18</option>
+          </select>
+        </label>
+        <button type="button" onclick="changeViewWeek(1)" style="width:auto;padding:8px 14px;">›</button>
+      </div>
+    </header>
+
+    <!-- 1. LEADERBOARD -->
+    <details class="panel" open>
+      <summary style="cursor:pointer;font-weight:bold;color:var(--accent);font-size:1.05rem;">🏆 Leaderboard</summary>
+      <div class="leaderboard-grid" id="leaderboard" style="margin-top:14px;"></div>
+    </details>
+
+    <!-- 2. SCREENSHOTS + PICKS -->
+    <section class="panel">
+      <h2 style="font-size:1.1rem;color:var(--accent);">📸 Screenshots & Picks</h2>
+      <div class="gallery-container" id="gallery-container">
+        <p style="color:var(--text-muted);font-size:.9rem;">No screenshots uploaded for this week yet.</p>
+      </div>
+      <hr style="border-color:var(--border);width:100%;">
+      <div id="pick-entry-heading"><h3 style="font-size:1rem;">🏈 Submit or Change Your Lock Pick</h3></div>
+      <div>
+        <label for="player-select">Select Your Name:</label>
+        <select id="player-select" onchange="checkExistingPick()">
+          <option value="">-- Choose Participant --</option>
+          <option value="Alan C.">Alan C.</option><option value="Alan R.">Alan R.</option>
+          <option value="Anthony">Anthony</option><option value="Diarmaid">Diarmaid</option>
+          <option value="Jocser">Jocser</option><option value="Kieran">Kieran</option>
+          <option value="Paul K.">Paul K.</option><option value="Steve">Steve</option>
+        </select>
+      </div>
+      <div id="pin-area" style="display:none;">
+        <div id="pin-login-controls">
+        <label for="player-pin">Your 4-digit PIN:</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="player-pin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="4-digit PIN" style="margin:0;flex:1;min-width:150px;">
+          <button type="button" onclick="verifyPlayerCode()" style="width:auto;margin:0;">Log In</button>
+        </div>
+        <button type="button" onclick="showFirstTimeSetup()" style="width:auto;margin-top:8px;background:#475569;">First time? Create your private PIN</button>
+        </div>
+        <div id="pin-logged-controls" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span id="logged-in-label" style="color:var(--green);font-weight:700;">✓ Logged in</span>
+          <button type="button" onclick="logoutPlayer()" style="width:auto;margin:0;background:#475569;">Log out</button>
+        </div>
+        <div id="first-time-setup" style="display:none;margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:10px;">
+          <div style="font-weight:700;margin-bottom:8px;">First-time setup</div>
+          <label for="temporary-pin">Temporary 4-digit code:</label>
+          <input id="temporary-pin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="Temporary code">
+          <label for="new-private-pin">Choose your new 4-digit PIN:</label>
+          <input id="new-private-pin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="New private PIN">
+          <label for="confirm-private-pin">Confirm your new PIN:</label>
+          <input id="confirm-private-pin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="Confirm new PIN">
+          <button type="button" onclick="createPrivatePin()">Create Private PIN</button>
+          <div style="font-size:.82rem;color:var(--text-muted);margin-top:7px;">Your temporary code works only for first-time setup. After this, use the private PIN you choose.</div>
+        </div>
+        <div id="pin-status" style="font-size:.85rem;color:var(--text-muted);margin-top:8px;"></div>
+      </div>
+      <div id="current-pick-notice" class="current-pick-notice"></div>
+      <div>
+        <label>Available Odds — ordered by game date/time:</label>
+        <div class="odds-grid" id="available-odds-container"><p style="color:var(--text-muted);font-size:.9rem;">No active odds posted for this week yet.</p></div>
+      </div>
+      <div id="selection-banner" class="selection-banner">👈 Tap a team card above to choose your pick.</div>
+      <button id="submit-btn" type="button" onclick="submitUserPick()">Submit Lock Pick</button>
+    </section>
+
+    <!-- 3. WEEKLY PICKS / RESULTS -->
+    <section>
+      <h2 class="section-title">🏈 Weekly Picks / Results</h2>
+      <div class="players-grid" id="players"></div>
+    </section>
+
+    <!-- 4. ADMIN -->
+    <details class="panel">
+      <summary style="cursor:pointer;font-weight:bold;color:var(--accent);">⚙️ Admin</summary>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:12px;">
+        <div style="padding:10px;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:.9rem;">Admin actions automatically apply to the <strong>View Week</strong> selected at the top of the page.</div>
+        <label>Upload Odds Screenshots:<input type="file" id="screenshot-upload" multiple accept="image/*"></label>
+        <button id="upload-btn" type="button" onclick="uploadScreenshots()">Upload & Extract Odds</button>
+        <button id="extract-odds-btn" type="button" onclick="extractOddsFromScreenshots()" style="background:#475569;">Re-extract Odds From Uploaded Screenshots</button>
+        <div id="extract-status" style="display:none;padding:10px;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);"></div>
+        <hr style="border-color:var(--border);">
+        <label>Review Extracted Fixture Odds:<textarea id="odds-text" placeholder="2026-09-10 | 20:15 | Seattle Seahawks (vs New England Patriots) 8/15"></textarea></label>
+        <small style="color:var(--text-muted);">Date/time are kept with each team and used to order the picks grid. Older extraction output without dates still works.</small>
+        <button id="publish-odds-btn" type="button" onclick="publishOdds()">Publish Odds Grid</button>
+        <hr style="border-color:var(--border);">
+        <button id="refresh-scores-btn" type="button" onclick="refreshNFLscores()" style="background:#16a34a;">🏈 Refresh NFL Scores & Auto-Settle</button>
+        <small style="color:var(--text-muted);">Reads the trusted NFL score feed, updates live/final scores, and settles only confirmed final games. Manual settlement remains available below as a backup.</small>
+        <hr style="border-color:var(--border);">
+        <label>Auto-Settle Results (Paste Winning Teams, 1 per line):<textarea id="winning-teams-input" placeholder="Seattle Seahawks&#10;Detroit Lions&#10;Kansas City Chiefs"></textarea></label>
+        <button id="auto-settle-btn" type="button" onclick="autoSettleWeekResults()">Auto-Settle Week Results</button>
+      </div>
+    </details>
+  </div>
+
+  <script>
+    // Force global scope visibility
+    window.uploadScreenshots = async function() {
+      const uploadBtn = document.getElementById('upload-btn');
+      try {
+        const fileInput = document.getElementById('screenshot-upload');
+
+        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+          alert("Please select one or more image files first.");
+          return;
+        }
+        if (!supabaseClient) {
+          alert("Supabase is not initialized yet. Please reload the page and try again.");
+          return;
+        }
+
+        const weekNum = getViewWeek();
+        const files = Array.from(fileInput.files);
+        let uploaded = 0;
+        const failures = [];
+
+        // Replace this week's screenshots instead of appending to old ones.
+        const folder = `week_${weekNum}`;
+        const { data: existingFiles, error: listError } = await supabaseClient.storage
+          .from(BUCKET_NAME)
+          .list(folder, { limit: 1000 });
+
+        if (listError) throw new Error(`Could not read existing screenshots: ${listError.message}`);
+
+        const oldPaths = (existingFiles || [])
+          .filter(f => f.name && !f.name.startsWith('.'))
+          .map(f => `${folder}/${f.name}`);
+
+        if (oldPaths.length) {
+          const { error: removeError } = await supabaseClient.storage
+            .from(BUCKET_NAME)
+            .remove(oldPaths);
+          if (removeError) throw new Error(`Could not remove old screenshots: ${removeError.message}. Supabase needs a DELETE storage policy for this bucket.`);
+        }
+
+        if (uploadBtn) {
+          uploadBtn.disabled = true;
+          uploadBtn.textContent = `Uploading 0/${files.length}...`;
+        }
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const rawExt = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
+          const fileExt = (rawExt || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+          // Include index + random suffix so several files selected at once can never collide.
+          const filePath = `week_${weekNum}/img_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
+
+          const { error } = await supabaseClient.storage
+            .from(BUCKET_NAME)
+            .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+          if (error) {
+            failures.push(`${file.name}: ${error.message}`);
+          } else {
+            uploaded++;
+          }
+
+          if (uploadBtn) uploadBtn.textContent = `Uploading ${i + 1}/${files.length}...`;
+        }
+
+        // Refresh the gallery before clearing the picker/status.
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await loadScreenshots(weekNum);
+
+        if (uploaded > 0) fileInput.value = '';
+
+        if (uploaded > 0) {
+          await extractOddsFromScreenshots();
+        }
+
+        if (failures.length > 0) {
+          alert(`${uploaded} of ${files.length} screenshots uploaded.\n\nFailed:\n${failures.join('\n')}`);
+        }
+      } catch (err) {
+        alert(`Upload error: ${err.message}`);
+      } finally {
+        if (uploadBtn) {
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = 'Upload & Extract Odds';
+        }
+      }
+    };
+
+    const SUPABASE_URL = "https://dkdtrxgvxrmqgpcltgqk.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_03eJr-IxUz-Vz79iARNhtA_kqADVuCN";
+    const BUCKET_NAME = "odds-screenshots";
+
+    let supabaseClient = null;
+    let activeOdds = [];
+    let selectedPick = null;
+    let existingUserPicks = [];
+    let replacePickId = null;
+
+    // Competition participants. A week is automatically revealed/locked only
+    // after every participant below has submitted both Pick 1 and Pick 2.
+    const COMPETITION_PLAYERS = ['Alan C.', 'Alan R.', 'Anthony', 'Diarmaid', 'Jocser', 'Kieran', 'Paul K.', 'Steve'];
+    // Weeks 1-16: each player gets two Pick Viewer weeks. Weeks 17-18 are fully blind.
+    const PICK_VIEWER_ROTATION = ['Alan C.', 'Alan R.', 'Anthony', 'Diarmaid', 'Jocser', 'Kieran', 'Paul K.', 'Steve'];
+    function getPickViewer(weekNum) {
+      const w = Number(weekNum);
+      return (w >= 1 && w <= 16) ? PICK_VIEWER_ROTATION[(w - 1) % PICK_VIEWER_ROTATION.length] : null;
+    }
+    function activeLoggedInPlayer() {
+      const selected = document.getElementById('player-select')?.value || '';
+      if (selected && isPlayerUnlocked(selected)) return selected;
+      const saved = localStorage.getItem('lotw_active_player') || '';
+      return saved && isPlayerUnlocked(saved) ? saved : '';
+    }
+    // Player PINs are verified server-side by Supabase Edge Functions.
+    // No player PINs or PIN hashes are stored in this HTML.
+    function getViewWeek() { return parseInt(document.getElementById('view-week-input')?.value || '1') || 1; }
+    function isPlayerUnlocked(name) { return !!name && localStorage.getItem('lotw_unlocked_' + name) === '1'; }
+
+    function refreshPlayerAuthUI() {
+      const name = document.getElementById('player-select')?.value || '';
+      const unlocked = isPlayerUnlocked(name);
+      const loginControls = document.getElementById('pin-login-controls');
+      const loggedControls = document.getElementById('pin-logged-controls');
+      const label = document.getElementById('logged-in-label');
+      const setup = document.getElementById('first-time-setup');
+      if (loginControls) loginControls.style.display = unlocked ? 'none' : '';
+      if (loggedControls) loggedControls.style.display = unlocked ? 'flex' : 'none';
+      if (label) label.textContent = unlocked ? `✓ Logged in as ${name}` : '✓ Logged in';
+      if (unlocked && setup) setup.style.display = 'none';
+    }
+
+    async function logoutPlayer() {
+      const name = document.getElementById('player-select')?.value || '';
+      if (name) localStorage.removeItem('lotw_unlocked_' + name);
+      if (localStorage.getItem('lotw_active_player') === name) localStorage.removeItem('lotw_active_player');
+      const pin = document.getElementById('player-pin'); if (pin) pin.value = '';
+      refreshPlayerAuthUI();
+      await checkExistingPick();
+    }
+
+    function showFirstTimeSetup() {
+      const name = document.getElementById('player-select').value;
+      if (!name) return alert('Choose your name first.');
+      const box = document.getElementById('first-time-setup');
+      if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function verifyPlayerCode() {
+      const name = document.getElementById('player-select').value;
+      const code = document.getElementById('player-pin').value.trim();
+      const status = document.getElementById('pin-status');
+      if (!name) return alert('Choose your name first.');
+      if (!/^\d{4}$/.test(code)) return alert('Enter your 4-digit PIN.');
+      status.textContent = 'Checking PIN…'; status.style.color = 'var(--text-muted)';
+      try {
+        const { data, error } = await supabaseClient.functions.invoke('verify-player', {
+          body: { player_name: name, pin: code }
+        });
+        if (error) throw error;
+        if (!data?.success || data?.verified !== true) {
+          status.textContent = 'Incorrect PIN. If this is your first visit, use “First time? Create your private PIN”.';
+          status.style.color = 'var(--red)';
+          return;
+        }
+        localStorage.setItem('lotw_unlocked_' + name, '1');
+        localStorage.setItem('lotw_active_player', name);
+        document.getElementById('player-pin').value = '';
+        const setup = document.getElementById('first-time-setup'); if (setup) setup.style.display = 'none';
+        status.textContent = '';
+        refreshPlayerAuthUI();
+        await checkExistingPick();
+      } catch (err) {
+        status.textContent = 'Could not verify PIN: ' + (err?.message || err);
+        status.style.color = 'var(--red)';
+      }
+    }
+
+    async function createPrivatePin() {
+      const name = document.getElementById('player-select').value;
+      const temporaryPin = document.getElementById('temporary-pin').value.trim();
+      const newPin = document.getElementById('new-private-pin').value.trim();
+      const confirmPin = document.getElementById('confirm-private-pin').value.trim();
+      const status = document.getElementById('pin-status');
+      if (!name) return alert('Choose your name first.');
+      if (!/^\d{4}$/.test(temporaryPin)) return alert('Enter your 4-digit temporary code.');
+      if (!/^\d{4}$/.test(newPin)) return alert('Your new PIN must be exactly 4 digits.');
+      if (newPin !== confirmPin) return alert('The two new PIN entries do not match.');
+      if (newPin === temporaryPin) return alert('Choose a different PIN from your temporary code.');
+      status.textContent = 'Creating private PIN…'; status.style.color = 'var(--text-muted)';
+      try {
+        const { data, error } = await supabaseClient.functions.invoke('set-player-pin', {
+          body: { player_name: name, temporary_pin: temporaryPin, new_pin: newPin }
+        });
+        if (error) throw error;
+        if (!data?.success || data?.changed !== true) throw new Error(data?.error || 'PIN could not be changed.');
+        localStorage.setItem('lotw_unlocked_' + name, '1');
+        localStorage.setItem('lotw_active_player', name);
+        document.getElementById('temporary-pin').value = '';
+        document.getElementById('new-private-pin').value = '';
+        document.getElementById('confirm-private-pin').value = '';
+        document.getElementById('first-time-setup').style.display = 'none';
+        status.textContent = '';
+        refreshPlayerAuthUI();
+        await checkExistingPick();
+      } catch (err) {
+        status.textContent = 'Could not create PIN. Check your temporary code, or use Log In if you already created a private PIN.';
+        status.style.color = 'var(--red)';
+      }
+    }
+
+    function changeViewWeek(delta) {
+      const el = document.getElementById('view-week-input');
+      let w = Math.max(1, Math.min(18, (parseInt(el.value)||1) + delta));
+      el.value = String(w); loadViewWeekData();
+    }
+
+    function getWeekSubmissionStatus(allPicks, weekNum) {
+      const weekPicks = (allPicks || []).filter(p => Number(p.week_num) === Number(weekNum));
+      const counts = {};
+      COMPETITION_PLAYERS.forEach(name => counts[name] = 0);
+      weekPicks.forEach(p => {
+        if (Object.prototype.hasOwnProperty.call(counts, p.player_name)) {
+          counts[p.player_name] += 1;
+        }
+      });
+      const revealed = COMPETITION_PLAYERS.every(name => counts[name] >= 2);
+      return { counts, revealed, totalSubmitted: COMPETITION_PLAYERS.reduce((n, name) => n + Math.min(counts[name], 2), 0), required: COMPETITION_PLAYERS.length * 2 };
+    }
+
+    async function isWeekRevealed(weekNum) {
+      const { data, error } = await supabaseClient
+        .from('picks')
+        .select('player_name,week_num,pick_number')
+        .eq('week_num', weekNum);
+      if (error) throw error;
+      return getWeekSubmissionStatus(data || [], weekNum).revealed;
+    }
+
+    async function loadCurrentWeekSetting() {
+      // Open the latest week with published odds but no settled results.
+      // If all published weeks are settled, open the latest published week.
+      let currentWeek = 1;
+      try {
+        const [{ data: oddsRows, error: oddsError }, { data: pickRows, error: picksError }] = await Promise.all([
+          supabaseClient.from('odds').select('week_num'),
+          supabaseClient.from('picks').select('week_num,result')
+        ]);
+        if (oddsError) throw oddsError;
+        if (picksError) throw picksError;
+
+        const publishedWeeks = [...new Set((oddsRows || [])
+          .map(r => Number(r.week_num))
+          .filter(w => Number.isInteger(w) && w >= 1 && w <= 18))]
+          .sort((a,b) => a-b);
+
+        // A week is complete only when all 16 competition picks exist and every
+        // one has been settled. A single Thursday result must not advance the app.
+        const isFullySettled = (week) => {
+          const weekPicks = (pickRows || []).filter(p => Number(p.week_num) === Number(week));
+          const required = COMPETITION_PLAYERS.length * 2;
+          return weekPicks.length >= required && weekPicks.every(p =>
+            ['WIN','LOSS'].includes(String(p.result || '').toUpperCase())
+          );
+        };
+
+        const openWeeks = publishedWeeks.filter(w => !isFullySettled(w));
+        currentWeek = openWeeks.length ? Math.max(...openWeeks)
+                    : publishedWeeks.length ? Math.max(...publishedWeeks)
+                    : 1;
+      } catch (err) {
+        console.error('Could not determine current week automatically:', err);
+      }
+
+      const viewWeek = document.getElementById('view-week-input');
+      if (viewWeek) viewWeek.value = String(currentWeek);
+      return currentWeek;
+    }
+
+    window.onload = async () => {
+      try {
+        supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        await loadCurrentWeekSetting();
+        await loadViewWeekData();
+      } catch (err) {
+        alert("Initialization error: " + err.message);
+      }
+    };
+
+    async function loadViewWeekData() {
+      const weekNum = getViewWeek();
+      const titleEl = document.getElementById('header-title');
+      if (titleEl) titleEl.textContent = `📋 WEEK ${weekNum} LOCK OF THE WEEK`;
+      selectedPick = null; replacePickId = null; existingUserPicks = [];
+      await loadScreenshots(weekNum);
+      await loadOdds(weekNum);
+      await fetchPicks(weekNum);
+      await updatePickEntryLockState(weekNum);
+    }
+
+    // Refresh the user view only when an admin action affected the week currently being viewed.
+    async function refreshAfterAdmin(adminWeek) {
+      if (Number(adminWeek) === Number(getViewWeek())) await loadViewWeekData();
+    }
+
+
+    async function updatePickEntryLockState(weekNum) {
+      const heading = document.getElementById('pick-entry-heading');
+      const playerSelect = document.getElementById('player-select');
+      const oddsContainer = document.getElementById('available-odds-container');
+      const banner = document.getElementById('selection-banner');
+      const submitBtn = document.getElementById('submit-btn');
+      const notice = document.getElementById('current-pick-notice');
+
+      // Week 1 is permanently closed. Other weeks still auto-lock once all 8 players are 2/2.
+      let locked = Number(weekNum) === 1;
+      if (!locked) {
+        try { locked = await isWeekRevealed(weekNum); } catch (e) { console.error('Lock check failed:', e); }
+      }
+
+      if (locked) {
+        resetSelection();
+        if (heading) heading.innerHTML = `<div style="padding:12px;border:1px solid var(--border);border-radius:10px;background:rgba(15,23,42,.55);"><div style="font-weight:800;color:var(--accent);">🔒 Week ${weekNum} Picks Locked</div><div style="margin-top:5px;color:var(--text-muted);font-size:.9rem;">Selections are closed. View the revealed picks and results below.</div></div>`;
+        if (playerSelect) { playerSelect.value = ''; playerSelect.disabled = true; playerSelect.closest('div').style.display = 'none'; }
+        const pinArea = document.getElementById('pin-area'); if (pinArea) pinArea.style.display = 'none';
+        if (notice) { notice.innerHTML = ''; notice.classList.remove('active'); notice.style.display = 'none'; }
+        if (oddsContainer) oddsContainer.style.display = 'none';
+        const oddsLabel = oddsContainer?.parentElement?.querySelector('label');
+        if (oddsLabel) oddsLabel.style.display = 'none';
+        if (banner) banner.style.display = 'none';
+        if (submitBtn) submitBtn.style.display = 'none';
+        return;
+      }
+
+      if (heading) heading.innerHTML = '<h3 style="font-size:1rem;">🏈 Submit or Change Your Lock Pick</h3>';
+      if (playerSelect) { playerSelect.disabled = false; playerSelect.closest('div').style.display = ''; }
+      if (notice) notice.style.display = '';
+      if (oddsContainer) oddsContainer.style.display = '';
+      const oddsLabel = oddsContainer?.parentElement?.querySelector('label');
+      if (oddsLabel) oddsLabel.style.display = '';
+      if (banner) banner.style.display = '';
+      if (submitBtn) submitBtn.style.display = '';
+      await checkExistingPick();
+    }
+
+    async function checkExistingPick() {
+      const playerName = document.getElementById('player-select').value;
+      const weekNum = getViewWeek();
+      const noticeEl = document.getElementById('current-pick-notice');
+      const submitBtn = document.getElementById('submit-btn');
+
+      if (!noticeEl || !submitBtn) return;
+      const pinArea = document.getElementById('pin-area');
+      const pinStatus = document.getElementById('pin-status');
+      if (!playerName) {
+        existingUserPicks = []; replacePickId = null;
+        noticeEl.classList.remove('active'); submitBtn.textContent = 'Submit Lock Pick';
+        if (pinArea) pinArea.style.display = 'none';
+        return;
+      }
+      if (pinArea) pinArea.style.display = '';
+      refreshPlayerAuthUI();
+      if (!isPlayerUnlocked(playerName)) {
+        existingUserPicks = []; replacePickId = null;
+        noticeEl.classList.remove('active'); noticeEl.innerHTML = '';
+        submitBtn.disabled = true; submitBtn.textContent = 'Unlock to Submit';
+        if (pinStatus) { pinStatus.textContent = 'Enter your private PIN to view or change your own picks. First visit? Use the first-time setup button.'; pinStatus.style.color = 'var(--text-muted)'; }
+        return;
+      }
+      submitBtn.disabled = false;
+      if (pinStatus) { pinStatus.textContent = ''; }
+      refreshPlayerAuthUI();
+
+      const { data, error } = await supabaseClient
+        .from('picks')
+        .select('*')
+        .eq('player_name', playerName)
+        .eq('week_num', weekNum)
+        .order('id', { ascending: true });
+
+      if (error) {
+        console.error('Error loading current picks:', error);
+        return;
+      }
+
+      existingUserPicks = data || [];
+      if (replacePickId && !existingUserPicks.some(p => String(p.id) === String(replacePickId))) replacePickId = null;
+
+      if (existingUserPicks.length) {
+        noticeEl.classList.add('active');
+        const rows = existingUserPicks
+          .sort((a, b) => Number(a.pick_number || 1) - Number(b.pick_number || 1))
+          .map((p, i) => {
+            const active = String(p.id) === String(replacePickId);
+            const pickNo = Number(p.pick_number || (i + 1));
+            const result = String(p.result || 'PENDING').toUpperCase();
+            const resultText = result === 'WIN' ? ` — WIN +${Number(p.pts || 0).toFixed(2)}` : result === 'LOSS' ? ` — LOSS ${Number(p.pts || -1).toFixed(2)}` : '';
+            return `<button type="button" onclick="choosePickToReplace('${p.id}')" style="display:block;width:100%;margin:6px 0;padding:10px;border-radius:8px;border:1px solid ${active ? '#3b82f6' : '#475569'};background:${active ? 'rgba(59,130,246,.25)' : 'rgba(15,23,42,.55)'};color:#fff;text-align:left;">Pick ${pickNo}: <strong>${escapeHtml(p.team)} (${escapeHtml(p.odds)})</strong>${resultText}${active ? ' — replacing this pick' : ''}</button>`;
+          }).join('');
+        noticeEl.innerHTML = `<div style="margin-bottom:6px;">📌 Week ${weekNum}: ${existingUserPicks.length}/2 picks saved.</div>${rows}${existingUserPicks.length >= 2 ? '<div style="font-size:.85rem;margin-top:6px;">To change a pick, tap Pick 1 or Pick 2 above, then choose a new team and press Update Selected Pick.</div>' : '<div style="font-size:.85rem;margin-top:6px;">Choose another team below to add your second pick.</div>'}`;
+        submitBtn.textContent = replacePickId ? 'Update Selected Pick' : (existingUserPicks.length < 2 ? 'Add Second Pick' : 'Choose Pick 1 or 2 to Replace');
+      } else {
+        replacePickId = null;
+        noticeEl.classList.remove('active');
+        submitBtn.textContent = 'Submit First Pick';
+      }
+    }
+
+    function choosePickToReplace(id) {
+      const pick = existingUserPicks.find(p => String(p.id) === String(id));
+      const oddsItem = findOddsForStoredPick(pick);
+      if (oddsItem && isOddsItemKickoffLocked(oddsItem)) {
+        return alert('That pick is locked because its game has already kicked off.');
+      }
+      replacePickId = id;
+      checkExistingPick();
+    }
+
+    window.extractOddsFromScreenshots = async function() {
+      const weekNum = getViewWeek();
+      const status = document.getElementById('extract-status');
+      const btn = document.getElementById('extract-odds-btn');
+      const oddsText = document.getElementById('odds-text');
+
+      if (!supabaseClient) return alert('Supabase is not initialized yet.');
+      if (status) {
+        status.style.display = 'block';
+        status.style.color = 'var(--text-muted)';
+        status.textContent = 'Reading uploaded screenshots and extracting fixture odds…';
+      }
+      if (btn) btn.disabled = true;
+
+      try {
+        // This calls the Supabase Edge Function named "extract-odds".
+        // The AI API key remains in Supabase secrets, never in this HTML file.
+        const { data, error } = await supabaseClient.functions.invoke('extract-odds', {
+          body: { week_num: weekNum, bucket: BUCKET_NAME }
+        });
+        if (error) throw error;
+        if (!data) throw new Error('The extraction function returned no data.');
+
+        let lines = [];
+        if (Array.isArray(data.lines)) {
+          lines = data.lines;
+        } else if (Array.isArray(data.fixtures)) {
+          data.fixtures.forEach((f, idx) => {
+            const date = f.game_date || f.date || '';
+            const time = f.game_time || f.time || '';
+            const prefix = (date || time) ? `${date} | ${time} | ` : '';
+            if (f.home && f.home_odds && f.away) lines.push(`${prefix}${f.home} (vs ${f.away}) ${f.home_odds}`);
+            if (f.away && f.away_odds && f.home) lines.push(`${prefix}${f.away} (vs ${f.home}) ${f.away_odds}`);
+          });
+        } else if (typeof data.text === 'string') {
+          lines = data.text.split('\n').map(x => x.trim()).filter(Boolean);
+        }
+
+        if (!lines.length) throw new Error('No fixture odds were detected in the screenshots.');
+        oddsText.value = lines.join('\n');
+        if (status) {
+          status.style.color = 'var(--green)';
+          status.innerHTML = `✓ Extracted <strong>${lines.length}</strong> team prices for Week ${weekNum}. Review them below, then press <strong>Publish Odds Grid</strong>.`;
+        }
+        oddsText.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (err) {
+        if (status) {
+          status.style.color = '#ff8a8a';
+          status.innerHTML = `Extraction isn't configured yet: ${escapeHtml(err.message || String(err))}<br><small>The screenshots are still uploaded safely. The Supabase <strong>extract-odds</strong> Edge Function must be installed before automatic image reading can work.</small>`;
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    };
+
+    async function loadScreenshots(weekNum) {
+      const galleryEl = document.getElementById('gallery-container');
+      if (!galleryEl) return;
+      galleryEl.innerHTML = '';
+
+      const { data, error } = await supabaseClient.storage
+        .from(BUCKET_NAME)
+        .list(`week_${weekNum}`, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+
+      if (error) {
+        galleryEl.innerHTML = `<p style="color:#ff8a8a;font-size:.9rem;">Could not load bookmaker screenshots: ${error.message}</p>`;
+        return;
+      }
+      if (!data || data.length === 0) {
+        galleryEl.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">No screenshots uploaded for this week yet.</p>';
+        return;
+      }
+
+      data.forEach(file => {
+        if (file.name.startsWith('.')) return;
+
+        const { data: urlData } = supabaseClient.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(`week_${weekNum}/${file.name}`);
+
+        const imageUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        img.className = 'gallery-img';
+        img.onclick = () => window.open(imageUrl, '_blank');
+        galleryEl.appendChild(img);
+      });
+    }
+
+    // Bookmaker extraction stores kickoff in Irish local time (Europe/Dublin).
+    // Convert that wall-clock value to a real instant so kickoff locks work
+    // correctly for every fixture, including DST changes.
+    function dublinKickoffMs(gameDate, gameTime) {
+      if (!gameDate || !gameTime) return null;
+      const dm = String(gameDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const tm = String(gameTime).match(/^(\d{1,2}):(\d{2})/);
+      if (!dm || !tm) return null;
+      const target = { y:+dm[1], m:+dm[2], d:+dm[3], h:+tm[1], min:+tm[2] };
+      let guess = Date.UTC(target.y, target.m-1, target.d, target.h, target.min);
+      const fmt = new Intl.DateTimeFormat('en-GB', { timeZone:'Europe/Dublin', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23' });
+      for (let i=0; i<3; i++) {
+        const parts = Object.fromEntries(fmt.formatToParts(new Date(guess)).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+        const seen = Date.UTC(+parts.year, +parts.month-1, +parts.day, +parts.hour, +parts.minute);
+        const wanted = Date.UTC(target.y, target.m-1, target.d, target.h, target.min);
+        guess += wanted - seen;
+      }
+      return guess;
+    }
+
+    function isOddsItemKickoffLocked(item) {
+      const ms = dublinKickoffMs(item?.game_date, item?.game_time);
+      return ms !== null && Date.now() >= ms;
+    }
+
+    function findOddsForStoredPick(pick) {
+      if (!pick) return null;
+      return activeOdds.find(o => String(o.team) === String(pick.team)) || null;
+    }
+
+    function cleanDisplayTeam(value) {
+      return String(value || '').replace(/\s*\(vs\b.*$/i, '').trim().toLowerCase();
+    }
+
+    async function loadOdds(weekNum) {
+      const { data, error } = await supabaseClient
+        .from('odds')
+        .select('*')
+        .eq('week_num', weekNum)
+        .order('sort_order', { ascending: true });
+
+      const container = document.getElementById('available-odds-container');
+      if (!container) return;
+      container.innerHTML = '';
+      resetSelection();
+
+      if (error || !data || data.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">No active odds posted for this week.</p>';
+        activeOdds = [];
+        return;
+      }
+
+      data.sort((a,b) => (a.sort_order ?? 9999) - (b.sort_order ?? 9999));
+      activeOdds = data;
+      data.forEach(item => {
+        const card = document.createElement('div');
+        const kickoffLocked = isOddsItemKickoffLocked(item);
+        card.className = 'odds-card' + (kickoffLocked ? ' kickoff-locked' : '');
+        card.onclick = () => selectOddsCard(card, item);
+        const dt = [item.game_date, item.game_time].filter(Boolean).join(' • ');
+        const record = item.team_record ? ` <span class="team-record">(${escapeHtml(item.team_record)})</span>` : '';
+        const status = String(item.game_status || '').toUpperCase();
+        const hasScores = item.team_score !== null && item.team_score !== undefined && item.opponent_score !== null && item.opponent_score !== undefined;
+        const isWinner = status === 'FINAL' && item.winner && cleanDisplayTeam(item.winner) === cleanDisplayTeam(item.team);
+        const finalClass = status === 'FINAL' ? (isWinner ? 'win' : 'loss') : '';
+        const scoreLine = status === 'FINAL' && hasScores
+          ? `<span class="game-status final ${finalClass}">FINAL · ${escapeHtml(item.team_score)}–${escapeHtml(item.opponent_score)}</span>`
+          : status === 'LIVE' && hasScores
+          ? `<span class="game-status live">LIVE · ${escapeHtml(item.team_score)}–${escapeHtml(item.opponent_score)}</span>`
+          : '';
+        card.innerHTML = `
+          ${dt ? `<span class="odds-datetime">${escapeHtml(dt)}</span>` : ''}
+          <span class="odds-team">${escapeHtml(item.team)}${record}</span>
+          <span class="odds-val">${escapeHtml(item.odds)}</span>
+          ${scoreLine}
+          <div>${status === 'FINAL' ? '<span class="kickoff-lock-tag">🔒 FINAL</span>' : kickoffLocked ? '<span class="kickoff-lock-tag">🔒 KICKED OFF</span>' : '<span class="selected-tag">✓ SELECTED</span>'}</div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function selectOddsCard(cardEl, item) {
+      if (isOddsItemKickoffLocked(item)) {
+        return alert('That game has already kicked off, so it can no longer be selected.');
+      }
+      document.querySelectorAll('.odds-card').forEach(c => c.classList.remove('selected'));
+      cardEl.classList.add('selected');
+      selectedPick = item;
+
+      const banner = document.getElementById('selection-banner');
+      if (banner) {
+        banner.classList.add('active');
+        banner.innerHTML = `Selected Pick: <strong>${item.team} (${item.odds})</strong>`;
+      }
+    }
+
+    function resetSelection() {
+      selectedPick = null;
+      const banner = document.getElementById('selection-banner');
+      if (banner) {
+        banner.classList.remove('active');
+        banner.innerHTML = '👈 Tap a team card above to choose your pick.';
+      }
+      document.querySelectorAll('.odds-card').forEach(c => c.classList.remove('selected'));
+    }
+
+    async function publishOdds() {
+      const weekNum = getViewWeek();
+      const rawText = document.getElementById('odds-text').value.trim();
+      if (!rawText) return alert("Please enter odds text.");
+
+      const lines = rawText.split('\n').map(x => x.trim()).filter(Boolean);
+      const payload = [];
+
+      lines.forEach((line, index) => {
+        let gameDate = null, gameTime = null, pickText = line;
+        const pipe = line.split('|').map(x => x.trim());
+        if (pipe.length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(pipe[0])) {
+          gameDate = pipe[0];
+          gameTime = pipe[1] || null;
+          pickText = pipe.slice(2).join(' | ');
+        }
+        const parts = pickText.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          const oddsVal = parts.pop();
+          const teamName = parts.join(' ');
+          // Two team lines belong to one fixture, hence floor(index / 2).
+          payload.push({ team: teamName, odds: oddsVal, week_num: weekNum,
+            game_date: gameDate, game_time: gameTime, sort_order: Math.floor(index / 2) });
+        }
+      });
+
+      if (payload.length > 0) {
+        await supabaseClient.from('odds').delete().eq('week_num', weekNum);
+        const { error } = await supabaseClient.from('odds').insert(payload);
+
+        if (error) {
+          alert("Error publishing odds: " + error.message);
+        } else {
+          // Current week is detected automatically from published odds and results.
+          alert(`Week ${weekNum} odds successfully published.`);
+          document.getElementById('odds-text').value = '';
+          await loadOdds(weekNum);
+        }
+      }
+    }
+
+    async function refreshNFLscores() {
+      const weekNum = getViewWeek();
+      const btn = document.getElementById('refresh-scores-btn');
+      if (!supabaseClient) return alert('Supabase is not initialized yet.');
+      try {
+        if (btn) { btn.disabled = true; btn.textContent = 'Refreshing scores…'; }
+        const { data, error } = await supabaseClient.functions.invoke('update-nfl-scores', {
+          body: { week_num: weekNum, dry_run: false }
+        });
+        if (error) throw error;
+        if (!data?.success) throw new Error(data?.error || 'Score refresh failed.');
+        const settled = Number(data.picks_settled || 0);
+        const updated = Number(data.odds_rows_updated || 0);
+        alert(`Week ${weekNum} refreshed: ${updated} team rows updated${settled ? ` and ${settled} pick${settled === 1 ? '' : 's'} settled` : ''}.`);
+        await loadViewWeekData();
+      } catch (err) {
+        alert('Score refresh error: ' + (err?.message || String(err)));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🏈 Refresh NFL Scores & Auto-Settle'; }
+      }
+    }
+
+    async function autoSettleWeekResults() {
+      const weekNum = getViewWeek();
+      const rawInput = document.getElementById('winning-teams-input').value.trim();
+
+      if (!rawInput) return alert("Please paste the winning teams.");
+
+      const winningTeams = rawInput.split('\n')
+        .map(line => line.trim().toLowerCase())
+        .filter(line => line.length > 0);
+
+      const { data: picks, error } = await supabaseClient
+        .from('picks')
+        .select('*')
+        .eq('week_num', weekNum);
+
+      if (error || !picks || picks.length === 0) {
+        return alert(`No picks found for Week ${weekNum} to settle.`);
+      }
+
+      // Use exact team-name matching. The stored pick can be either
+      // "Minnesota Vikings" or "Minnesota Vikings (vs Green Bay Packers)".
+      // We deliberately do NOT use substring matching because that can settle
+      // the wrong side of a fixture.
+      const normaliseTeam = (value) => String(value || '')
+        .replace(/\s*\(vs\b.*$/i, '')
+        .trim()
+        .toLowerCase();
+
+      const winnerSet = new Set(winningTeams.map(normaliseTeam));
+      let settledCount = 0;
+      let failedCount = 0;
+
+      for (const pick of picks) {
+        const pickedTeam = normaliseTeam(pick.team);
+        const isWin = winnerSet.has(pickedTeam);
+
+        let resultStatus = isWin ? 'WIN' : 'LOSS';
+        let ptsEarned = -1.00;
+
+        if (isWin) {
+          const oddsText = String(pick.odds || '').trim().toUpperCase();
+
+          // Spreadsheet scoring:
+          // WIN = full decimal return (stake + profit).
+          // e.g. 4/5 => 1.80, 4/9 => 1.44, EVS => 2.00.
+          // LOSS = -1.00.
+          if (['EVS', 'EVENS', 'EVEN'].includes(oddsText)) {
+            ptsEarned = 2.00;
+          } else {
+            const match = oddsText.match(/^(\d+)\s*\/\s*(\d+)$/);
+            if (!match || Number(match[2]) === 0) {
+              alert(`Could not settle ${pick.player_name}'s pick because the odds "${pick.odds}" are not recognised.`);
+              failedCount++;
+              continue;
+            }
+            ptsEarned = Number((1 + Number(match[1]) / Number(match[2])).toFixed(2));
+          }
+        }
+
+        const { error: updateError } = await supabaseClient
+          .from('picks')
+          .update({ result: resultStatus, pts: ptsEarned })
+          .eq('id', pick.id);
+
+        if (updateError) {
+          console.error('Settlement update failed:', updateError);
+          failedCount++;
+        } else {
+          settledCount++;
+        }
+      }
+
+      const message = failedCount
+        ? `Settled ${settledCount} picks for Week ${weekNum}. ${failedCount} could not be updated.`
+        : `Successfully settled ${settledCount} picks for Week ${weekNum}!`;
+      alert(message);
+      document.getElementById('winning-teams-input').value = '';
+      await refreshAfterAdmin(weekNum);
+    }
+
+    async function submitUserPick() {
+      const playerName = document.getElementById('player-select').value;
+      const weekNum = getViewWeek();
+      if (!isPlayerUnlocked(playerName)) return alert('Log in with your 4-digit PIN to access your picks first.');
+
+      if (Number(weekNum) === 1) return alert('Week 1 is locked. No new picks or changes are allowed.');
+      if (!playerName) return alert("Please select your name from the dropdown.");
+      if (!selectedPick) return alert("Please select a team pick from the odds grid.");
+      // Re-check at the exact moment of submission. This protects users who
+      // left the page open while a game kicked off.
+      if (isOddsItemKickoffLocked(selectedPick)) {
+        resetSelection();
+        await loadOdds(weekNum);
+        return alert('That game has already kicked off, so this pick can no longer be submitted.');
+      }
+
+      // Once everybody has submitted both picks, the week is automatically
+      // revealed and locked. No one can change a selection after seeing the field.
+      try {
+        if (await isWeekRevealed(weekNum)) {
+          return alert(`Week ${weekNum} is locked because all players have submitted both picks. Everyone's selections are now visible.`);
+        }
+      } catch (lockError) {
+        return alert('Could not verify whether this week is locked: ' + lockError.message);
+      }
+
+      // Always re-read the two slots from Supabase before saving.
+      const { data: currentPicks, error: loadError } = await supabaseClient
+        .from('picks')
+        .select('*')
+        .eq('player_name', playerName)
+        .eq('week_num', weekNum)
+        .order('pick_number', { ascending: true });
+
+      if (loadError) return alert('Error checking existing picks: ' + loadError.message);
+
+      const picksNow = currentPicks || [];
+      const duplicate = picksNow.find(
+        p => p.team === selectedPick.team && String(p.id) !== String(replacePickId)
+      );
+      if (duplicate) {
+        return alert('You already have ' + selectedPick.team + ' as one of your two picks.');
+      }
+
+      let error = null;
+      let savedPickNumber = null;
+
+      if (replacePickId) {
+        const rowToReplace = picksNow.find(p => String(p.id) === String(replacePickId));
+        if (!rowToReplace) {
+          replacePickId = null;
+          return alert('That pick could not be found. Please choose Pick 1 or Pick 2 again.');
+        }
+        const existingOddsItem = findOddsForStoredPick(rowToReplace);
+        if (existingOddsItem && isOddsItemKickoffLocked(existingOddsItem)) {
+          replacePickId = null;
+          await checkExistingPick();
+          return alert('That existing pick is locked because its game has already kicked off.');
+        }
+
+        savedPickNumber = Number(rowToReplace.pick_number || 1);
+
+        const payload = {
+          player_name: playerName,
+          team: selectedPick.team,
+          odds: selectedPick.odds,
+          result: 'PENDING',
+          pts: 0,
+          week_num: weekNum,
+          pick_number: savedPickNumber
+        };
+
+        ({ error } = await supabaseClient
+          .from('picks')
+          .update(payload)
+          .eq('id', replacePickId));
+
+      } else {
+        const usedSlots = new Set(picksNow.map(p => Number(p.pick_number || 1)));
+
+        if (!usedSlots.has(1)) {
+          savedPickNumber = 1;
+        } else if (!usedSlots.has(2)) {
+          savedPickNumber = 2;
+        } else {
+          return alert('You already have 2 picks. Tap Pick 1 or Pick 2 in the blue box above to choose which one you want to replace.');
+        }
+
+        const payload = {
+          player_name: playerName,
+          team: selectedPick.team,
+          odds: selectedPick.odds,
+          result: 'PENDING',
+          pts: 0,
+          week_num: weekNum,
+          pick_number: savedPickNumber
+        };
+
+        ({ error } = await supabaseClient
+          .from('picks')
+          .insert([payload]));
+      }
+
+      if (error) {
+        alert('Error saving pick: ' + error.message);
+      } else {
+        alert(`Pick ${savedPickNumber} saved for ${playerName}: ${selectedPick.team} (${selectedPick.odds})`);
+        replacePickId = null;
+        resetSelection();
+        await checkExistingPick();
+        await fetchPicks(weekNum);
+      }
+    }
+
+    async function fetchPicks(weekNum) {
+      const { data, error } = await supabaseClient.from('picks').select('*');
+      if (error || !data) return;
+
+      const groupedPlayers = {};
+      const currentStatus = getWeekSubmissionStatus(data, weekNum);
+
+      data.forEach(item => {
+        if (!groupedPlayers[item.player_name]) {
+          groupedPlayers[item.player_name] = { name: item.player_name, score: 0, picks: [] };
+        }
+
+        groupedPlayers[item.player_name].picks.push({
+          team: item.team,
+          odds: item.odds,
+          result: item.result || 'PENDING',
+          pts: parseFloat(item.pts || 0),
+          week_num: item.week_num,
+          pick_number: item.pick_number || 1
+        });
+
+        // Do not let automatic early settlement leak hidden current-week picks
+        // through movement in the public cumulative leaderboard. The viewed
+        // week's points join the leaderboard only after all 8 players are 2/2.
+        const isViewedWeek = Number(item.week_num) === Number(weekNum);
+        if (!isViewedWeek || currentStatus.revealed) {
+          groupedPlayers[item.player_name].score += parseFloat(item.pts || 0);
+        }
+      });
+
+      // Keep all eight competition players visible even before they have a pick.
+      COMPETITION_PLAYERS.forEach(name => {
+        if (!groupedPlayers[name]) groupedPlayers[name] = { name, score: 0, picks: [] };
+      });
+
+      renderLeaderboard(groupedPlayers);
+      renderPlayersGrid(groupedPlayers, weekNum, data);
+    }
+
+    function renderLeaderboard(groupedPlayers) {
+      const container = document.getElementById('leaderboard');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const players = Object.values(groupedPlayers).sort((a, b) => b.score - a.score);
+      if (players.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted);">No picks submitted yet.</p>';
+        return;
+      }
+
+      players.forEach((player, index) => {
+        const card = document.createElement('div');
+        card.className = 'leaderboard-card';
+        const scoreClass = player.score > 0 ? 'positive' : (player.score < 0 ? 'negative' : '');
+        card.innerHTML = `<div><span class="rank">${index + 1}.</span><strong>${escapeHtml(player.name)}</strong></div><span class="score ${scoreClass}">${player.score.toFixed(2)}</span>`;
+        container.appendChild(card);
+      });
+    }
+
+    function renderPlayersGrid(groupedPlayers, currentWeek, allPicks) {
+      const container = document.getElementById('players');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const status = getWeekSubmissionStatus(allPicks || [], currentWeek);
+
+      // Before the normal reveal, the designated Pick Viewer can see incoming picks
+      // immediately when logged in. They do NOT need to submit their own picks first.
+      // Weeks 17-18 stay fully blind.
+      if (!status.revealed) {
+        const viewer = getPickViewer(currentWeek);
+        const loggedIn = activeLoggedInPlayer();
+        const viewerCanSee = !!viewer && loggedIn === viewer;
+
+        if (!viewerCanSee) {
+          const info = document.createElement('div');
+          info.className = 'panel';
+          info.style.gridColumn = '1 / -1';
+          const viewerNote = viewer
+            ? ` This week's Pick Viewer is <strong>${escapeHtml(viewer)}</strong>; they can view incoming picks as soon as they are logged in.`
+            : ' Weeks 17 and 18 are fully blind for everyone.';
+          info.innerHTML = `<div style="font-weight:800;color:var(--accent);margin-bottom:6px;">🔒 Week ${currentWeek} picks are hidden</div>
+            <div style="color:var(--text-muted);font-size:.92rem;">${status.totalSubmitted}/${status.required} picks submitted.${viewerNote} All selections will appear for everyone when every player has submitted both picks.</div>`;
+          container.appendChild(info);
+
+          COMPETITION_PLAYERS.forEach(name => {
+            const count = Math.min(status.counts[name] || 0, 2);
+            const card = document.createElement('div');
+            card.className = 'player-card';
+            card.innerHTML = `<div class="player-header"><strong>${escapeHtml(name)}</strong><span>${count}/2 ${count === 2 ? '✓' : '🔒'}</span></div>
+              <div style="padding-top:12px;color:var(--text-muted);">${count === 2 ? 'Both picks submitted' : count === 1 ? '1 pick still to submit' : 'Waiting for picks'}</div>`;
+            container.appendChild(card);
+          });
+          return;
+        }
+
+        const viewerInfo = document.createElement('div');
+        viewerInfo.className = 'panel';
+        viewerInfo.style.gridColumn = '1 / -1';
+        viewerInfo.innerHTML = `<div style="font-weight:800;color:var(--gold);margin-bottom:6px;">👀 Pick Viewer — ${escapeHtml(viewer)}</div>
+          <div style="color:var(--text-muted);font-size:.92rem;">It's your Pick Viewer week, so you can see selections as they arrive — even before submitting your own picks. Everyone else remains blind until all 16 picks are submitted.</div>`;
+        container.appendChild(viewerInfo);
+
+        COMPETITION_PLAYERS.forEach(name => {
+          const player = groupedPlayers[name] || { name, picks: [] };
+          const picks = (player.picks || [])
+            .filter(p => Number(p.week_num) === Number(currentWeek))
+            .sort((a, b) => Number(a.pick_number || 1) - Number(b.pick_number || 1));
+          const card = document.createElement('div');
+          card.className = 'player-card';
+          const list = picks.length ? picks.map(pick => {
+            const result = String(pick.result || 'PENDING').toUpperCase();
+            const badge = result === 'WIN' ? 'badge-win' : result === 'LOSS' ? 'badge-loss' : 'badge-pending';
+            return `<li class="pick-item"><span>P${pick.pick_number || 1}: ${escapeHtml(pick.team)} <small>(${escapeHtml(pick.odds)})</small></span><span class="status-badge ${badge}">${escapeHtml(result)}</span></li>`;
+          }).join('') : '<li class="pick-item"><span style="color:var(--text-muted);">No picks submitted yet</span></li>';
+          card.innerHTML = `<div class="player-header"><strong>${escapeHtml(name)}</strong><span>${picks.length}/2</span></div><ul class="pick-list">${list}</ul>`;
+          container.appendChild(card);
+        });
+        return;
+      }
+
+      const reveal = document.createElement('div');
+      reveal.className = 'panel';
+      reveal.style.gridColumn = '1 / -1';
+      reveal.innerHTML = `<div style="font-weight:800;color:var(--green);">🔓 Week ${currentWeek} revealed — all players submitted 2/2. Week ${currentWeek} is now locked.</div>`;
+      container.appendChild(reveal);
+
+      const players = Object.values(groupedPlayers).sort((a, b) => a.name.localeCompare(b.name));
+      if (players.length === 0) {
+        container.innerHTML += '<p style="color: var(--text-muted);">No picks submitted yet.</p>';
+        return;
+      }
+
+      players.forEach(player => {
+        const card = document.createElement('div');
+        card.className = 'player-card';
+        // Only show picks and the score for the week currently being viewed.
+        // The main leaderboard remains cumulative across all weeks.
+        const picks = player.picks
+          .filter(p => Number(p.week_num) === Number(currentWeek))
+          .sort((a, b) => Number(a.pick_number || 1) - Number(b.pick_number || 1));
+        const weeklyScore = picks.reduce((sum, p) => sum + Number(p.pts || 0), 0);
+        const scoreClass = weeklyScore > 0 ? 'positive' : (weeklyScore < 0 ? 'negative' : '');
+        const list = picks.map(pick => {
+          const result = (pick.result || 'PENDING').toUpperCase();
+          const badge = result === 'WIN' ? 'badge-win' : result === 'LOSS' ? 'badge-loss' : 'badge-pending';
+          return `<li class="pick-item"><span>W${pick.week_num} P${pick.pick_number || 1}: ${escapeHtml(pick.team)} <small>(${escapeHtml(pick.odds)})</small></span><span class="status-badge ${badge}">${escapeHtml(result)}</span></li>`;
+        }).join('');
+        card.innerHTML = `<div class="player-header"><strong>${escapeHtml(player.name)}</strong><span class="score ${scoreClass}">${weeklyScore.toFixed(2)}</span></div><ul class="pick-list">${list}</ul>`;
+        container.appendChild(card);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    // Bind the upload button with addEventListener as well as the existing
+    // window.uploadScreenshots function. This avoids relying only on inline onclick.
+    document.addEventListener('DOMContentLoaded', () => {
+      const uploadBtn = document.getElementById('upload-btn');
+      if (uploadBtn) {
+        uploadBtn.removeAttribute('onclick');
+        uploadBtn.addEventListener('click', window.uploadScreenshots);
+      }
+    });
+  </script>
+</body>
+</html>
