@@ -157,17 +157,19 @@
 
     /* Keep team records intact and align card content consistently */
     .team-record {
+      display: block;
+      width: 100%;
       white-space: nowrap;
-      display: inline-block;
+      margin-top: 3px;
     }
     .odds-team {
       min-height: 3.15em;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      flex-wrap: wrap;
-      align-content: center;
-      column-gap: 4px;
+      flex-wrap: nowrap;
+      text-align: center;
       line-height: 1.2;
     }
 </style>
@@ -1113,10 +1115,23 @@
       if (error) {
         return alert('Error publishing odds: ' + error.message + '\nThe old odds may have been removed. Keep the extracted text and contact the admin.');
       }
-      const withRecords = payload.filter(p => p.team_record).length;
-      alert(`Week ${weekNum} odds published. Team records included for ${withRecords}/${payload.length} teams.${withRecords < payload.length ? '\nMissing records were not supplied by the extraction text.' : ''}`);
+      // Populate pre-week team records immediately, without settling any scores or picks.
+      let recordsMessage = '';
+      try {
+        const { data: recordsData, error: recordsError } = await supabaseClient.functions.invoke('update-nfl-scores', {
+          body: { week_num: weekNum, records_only: true, dry_run: false }
+        });
+        if (recordsError) throw recordsError;
+        if (!recordsData || recordsData.success === false || recordsData.error) {
+          throw new Error(recordsData?.error || 'Records update did not succeed.');
+        }
+        recordsMessage = `Team records updated: ${Number(recordsData.records_updated ?? 0)}.`;
+      } catch (recordsErr) {
+        recordsMessage = `Team records could not be fetched automatically: ${recordsErr?.message || String(recordsErr)}. Odds were published successfully; you can retry the records-only update in Supabase.`;
+      }
       document.getElementById('odds-text').value = '';
       await loadOdds(weekNum);
+      alert(`Week ${weekNum} odds published.\n${recordsMessage}`);
     }
 
     async function refreshNFLscores() {
